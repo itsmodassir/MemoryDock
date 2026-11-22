@@ -249,7 +249,8 @@ final class RemoteHostServer: ObservableObject {
                         var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
                         getnameinfo(interface.ifa_addr, socklen_t(interface.ifa_addr.pointee.sa_len),
                                     &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST)
-                        address = String(cString: hostname)
+                        let bytes = hostname.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) }
+                        address = String(decoding: bytes, as: UTF8.self)
                         break
                     }
                 }

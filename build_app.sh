@@ -48,6 +48,15 @@ cat > "$APP_OUT/Contents/Info.plist" << 'EOF'
 </plist>
 EOF
 
-codesign --force --deep --sign - "$APP_OUT"
+SIGN_ID="${CODESIGN_IDENTITY:-}"
+if [ -z "$SIGN_ID" ]; then
+  SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/{print $2; exit}')"
+fi
+if [ -z "$SIGN_ID" ]; then
+  SIGN_ID="-"
+fi
+
+echo "Signing with: $SIGN_ID"
+codesign --force --deep --sign "$SIGN_ID" "$APP_OUT"
 
 echo "Built $APP_OUT"

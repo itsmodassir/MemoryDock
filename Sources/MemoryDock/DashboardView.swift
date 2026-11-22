@@ -36,7 +36,7 @@ struct DashboardView: View {
                             .foregroundStyle(.secondary)
                     }
                     Button {
-                        vm.refresh()
+                        vm.refresh(includeBrowserTabs: selection == .tabs)
                         if selection == .disk || selection == .installedApps {
                             vm.refreshDisk()
                         } else if selection == .files {
@@ -80,6 +80,11 @@ struct DashboardView: View {
             appsTab
         case .tabs:
             tabsTab
+                .onAppear {
+                    if vm.tabs.isEmpty {
+                        vm.refresh(includeBrowserTabs: true)
+                    }
+                }
         case .services:
             servicesTab
         case .disk:

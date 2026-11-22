@@ -109,7 +109,7 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    func refresh() {
+    func refresh(includeBrowserTabs: Bool = false) {
         guard !isRefreshing else { return }
         isRefreshing = true
         let protected = protectedBundleIDs
@@ -118,14 +118,16 @@ final class AppViewModel: ObservableObject {
             let snap = SystemMonitor.readMemorySnapshot()
             let procs = SystemMonitor.listProcesses()
             let appList = SystemMonitor.buildAppItems(processes: procs, protectedBundleIDs: protected)
-            let tabList = BrowserManager.fetchOpenTabs()
+            let tabList = includeBrowserTabs ? BrowserManager.fetchOpenTabs() : []
             let svcList = ServiceManager.fetchServices(processes: procs)
             let volList = DiskManager.fetchVolumes()
 
             await MainActor.run {
                 self.snapshot = snap
                 self.apps = appList
-                self.tabs = tabList
+                if includeBrowserTabs {
+                    self.tabs = tabList
+                }
                 self.services = svcList
                 self.volumes = volList
                 self.isRefreshing = false
