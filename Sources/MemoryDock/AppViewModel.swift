@@ -13,6 +13,8 @@ final class AppViewModel: ObservableObject {
     @Published var cleanupFolders: [CleanupFolderItem] = []
     @Published var organizedFiles: [OrganizedFileItem] = []
     @Published var duplicateFileIDs: Set<String> = []
+    @Published var cloudMounts: [CloudMountItem] = []
+    @Published var s3Configs: [S3ConnectionConfig] = []
     @Published var isRefreshing = false
     @Published var isDiskRefreshing = false
     @Published var isScanningFiles = false
@@ -30,6 +32,7 @@ final class AppViewModel: ObservableObject {
     @Published var presetStopBackgroundServices = true
 
     private let protectedKey = "MemoryDock.protectedBundleIDs"
+    private let s3ConfigsKey = "MemoryDock.s3Configs"
     private var protectedBundleIDs: Set<String>
     private var refreshTimer: Timer?
 
@@ -46,6 +49,10 @@ final class AppViewModel: ObservableObject {
         }
         if let selfID = Bundle.main.bundleIdentifier {
             self.protectedBundleIDs.insert(selfID)
+        }
+        if let raw = UserDefaults.standard.data(forKey: s3ConfigsKey),
+           let decoded = try? JSONDecoder().decode([S3ConnectionConfig].self, from: raw) {
+            self.s3Configs = decoded
         }
         remoteServer.attach(viewModel: self)
         refresh()
@@ -377,6 +384,31 @@ final class AppViewModel: ObservableObject {
                 self.refreshVolumesOnly()
                 onDone()
             }
+        }
+    }
+
+    func refreshCloudMounts() {
+        Task.detached(priority: .userInitiated) {
+            let mounts = CloudStorageManager.detectCloudMounts()
+            await MainActor.run {
+                self.cloudMounts = mounts
+            }
+        }
+    }
+
+    func addS3Config(_ config: S3ConnectionConfig) {
+        s3Configs.append(config)
+        saveS3Configs()
+    }
+
+    func removeS3Config(_ config: S3ConnectionConfig) {
+        s3Configs.removeAll { $0.id == config.id }
+        saveS3Configs()
+    }
+
+    private func saveS3Configs() {
+        if let data = try? JSONEncoder().encode(s3Configs) {
+            UserDefaults.standard.set(data, forKey: s3ConfigsKey)
         }
     }
 }

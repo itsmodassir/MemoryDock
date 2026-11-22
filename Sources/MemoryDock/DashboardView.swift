@@ -98,6 +98,8 @@ struct DashboardView: View {
                         vm.scanFiles()
                     }
                 }
+        case .cloud:
+            CloudStorageView(vm: vm)
         case .remote:
             RemoteMacView(server: vm.remoteServer, client: vm.remoteClient)
         }
