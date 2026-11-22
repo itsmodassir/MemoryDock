@@ -128,7 +128,9 @@ enum DiskManager {
             .filter { $0.hasSuffix(".app") }
             .map { "\(appsDir)/\($0)" }
 
-        var items: [DiskAppItem] = []
+        var appInfos: [(path: String, resolved: String, name: String, isExt: Bool, isMounted: Bool, volLabel: String)] = []
+        var pathsToMeasure: [String] = []
+
         for path in appPaths {
             let url = URL(fileURLWithPath: path)
             let resolved = url.resolvingSymlinksInPath().path
@@ -140,24 +142,36 @@ enum DiskManager {
             } else {
                 volLabel = "Internal SSD"
             }
-
             let isMounted = fm.fileExists(atPath: resolved)
-            let sizeOut = isMounted
-                ? SystemMonitor.runShell("/usr/bin/du -sk \"\(resolved)\" 2>/dev/null | awk '{print $1}'")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                : "0"
-            let kb = UInt64(sizeOut) ?? 0
-            items.append(
-                DiskAppItem(
-                    id: path,
-                    name: url.deletingPathExtension().lastPathComponent,
-                    path: path,
-                    resolvedPath: resolved,
-                    sizeBytes: kb * 1024,
-                    isExternal: isExt,
-                    isMounted: isMounted,
-                    volumeLabel: volLabel
-                )
+            if isMounted {
+                pathsToMeasure.append(resolved)
+            }
+            appInfos.append((path, resolved, url.deletingPathExtension().lastPathComponent, isExt, isMounted, volLabel))
+        }
+
+        // Measure all app sizes in a single batched `du -sk` call instead of N sequential shells
+        var sizeByPath: [String: UInt64] = [:]
+        if !pathsToMeasure.isEmpty {
+            let quoted = pathsToMeasure.map { "\"\($0.replacingOccurrences(of: "\"", with: "\\\""))\"" }.joined(separator: " ")
+            let duOut = SystemMonitor.runShell("/usr/bin/du -sk \(quoted) 2>/dev/null")
+            for line in duOut.split(separator: "\n") {
+                let parts = line.split(maxSplits: 1, omittingEmptySubsequences: true, whereSeparator: { $0 == "\t" || $0 == " " })
+                if parts.count == 2, let kb = UInt64(parts[0]) {
+                    sizeByPath[String(parts[1])] = kb * 1024
+                }
+            }
+        }
+
+        let items = appInfos.map { info in
+            DiskAppItem(
+                id: info.path,
+                name: info.name,
+                path: info.path,
+                resolvedPath: info.resolved,
+                sizeBytes: sizeByPath[info.resolved] ?? 0,
+                isExternal: info.isExt,
+                isMounted: info.isMounted,
+                volumeLabel: info.volLabel
             )
         }
 
