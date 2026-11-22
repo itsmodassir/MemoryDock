@@ -102,36 +102,128 @@ struct DashboardView: View {
     }
 
     private var overviewTab: some View {
-        ScrollView {
+        let internalVol = vm.volumes.first { !$0.isExternal }
+        let extCount = vm.volumes.filter(\.isExternal).count
+
+        return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                HStack(spacing: 14) {
-                    summaryCard(title: "Running Apps", value: "\(vm.apps.count)", subtitle: "Unpinned: \(vm.apps.filter { !$0.isProtected }.count)", color: .blue)
-                    summaryCard(title: "Browser Tabs", value: "\(vm.tabs.count)", subtitle: "Inactive: \(vm.tabs.filter { !$0.isActive }.count)", color: .purple)
-                    summaryCard(title: "Databases & BG", value: "\(vm.services.filter(\.isRunning).count) running", subtitle: "\(vm.services.count) detected", color: .orange)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
+                    Button { selection = .apps } label: {
+                        summaryCard(
+                            title: "Running Apps",
+                            value: "\(vm.apps.count)",
+                            subtitle: "Unpinned: \(vm.apps.filter { !$0.isProtected }.count)",
+                            color: .blue
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { selection = .tabs } label: {
+                        summaryCard(
+                            title: "Browser Tabs",
+                            value: "\(vm.tabs.count)",
+                            subtitle: "Inactive: \(vm.tabs.filter { !$0.isActive }.count)",
+                            color: .purple
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { selection = .services } label: {
+                        summaryCard(
+                            title: "Databases & BG",
+                            value: "\(vm.services.filter(\.isRunning).count) running",
+                            subtitle: "\(vm.services.count) detected",
+                            color: .orange
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { selection = .disk } label: {
+                        summaryCard(
+                            title: "Mac Storage",
+                            value: internalVol.map { "\(formatBytes($0.availableBytes)) free" } ?? "--",
+                            subtitle: "\(extCount) external / Wi-Fi disk\(extCount == 1 ? "" : "s")",
+                            color: .teal
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
 
-                GroupBox("One-Click Low RAM Mode") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Toggle("Quit all unpinned apps", isOn: $vm.presetCloseUnpinnedApps)
-                        Toggle("Close all inactive browser tabs", isOn: $vm.presetCloseInactiveTabs)
-                        Toggle("Stop running databases & background services", isOn: $vm.presetStopBackgroundServices)
+                HStack(alignment: .top, spacing: 14) {
+                    GroupBox("One-Click Low RAM Mode") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Quit all unpinned apps", isOn: $vm.presetCloseUnpinnedApps)
+                            Toggle("Close all inactive browser tabs", isOn: $vm.presetCloseInactiveTabs)
+                            Toggle("Stop running databases & background services", isOn: $vm.presetStopBackgroundServices)
 
-                        HStack {
-                            Button {
-                                vm.runLowRamMode()
-                            } label: {
-                                Label("Free RAM Now", systemImage: "bolt.fill")
+                            HStack {
+                                Button {
+                                    vm.runLowRamMode()
+                                } label: {
+                                    Label("Free RAM Now", systemImage: "bolt.fill")
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.green)
+
+                                Text("Pinned apps stay open.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.green)
-
-                            Text("Pinned apps (like Finder & Antigravity) stay open.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            .padding(.top, 4)
                         }
-                        .padding(.top, 4)
+                        .padding(6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(6)
+
+                    GroupBox("Quick Actions") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Button {
+                                selection = .disk
+                            } label: {
+                                Label("Move Apps & Folders to External / Wi-Fi Disk", systemImage: "externaldrive.badge.plus")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            Button {
+                                selection = .files
+                            } label: {
+                                Label("Organize Files, Preview Images & Find Duplicates", systemImage: "folder.badge.gearshape")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            Button {
+                                selection = .services
+                            } label: {
+                                Label("Turn Off Unused Databases & Background Jobs", systemImage: "cylinder.split.1x2")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
+                if !vm.volumes.isEmpty {
+                    GroupBox("Mounted Drives") {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) {
+                            ForEach(vm.volumes) { vol in
+                                HStack(spacing: 8) {
+                                    Image(systemName: vol.isNetwork ? "wifi" : (vol.isExternal ? "externaldrive.fill" : "internaldrive.fill"))
+                                        .foregroundStyle(vol.isNetwork ? .purple : (vol.isWritable ? .blue : .secondary))
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(vol.name)
+                                            .fontWeight(.medium)
+                                            .lineLimit(1)
+                                        Text("\(formatBytes(vol.availableBytes)) free of \(formatBytes(vol.totalBytes))")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                }
+                                .padding(8)
+                                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+                        .padding(4)
+                    }
                 }
 
                 GroupBox("Top Memory Consumers") {
