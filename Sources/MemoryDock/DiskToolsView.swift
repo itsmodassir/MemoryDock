@@ -55,6 +55,7 @@ struct DiskToolsView: View {
                                 confirmFormatVolume = externalVolumes.first { $0.mountPath == selectedVolumePath }
                             }
                             .disabled(vm.isDiskToolBusy || selectedVolumePath.isEmpty)
+                            .help("Erases and formats ONLY the selected external volume (asks for confirmation first).")
                         }
                     }
                     if let msg = vm.diskToolMessage {
@@ -121,6 +122,7 @@ struct DiskToolsView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
                         .disabled(vm.isDiskToolBusy || isoOrAppPath.isEmpty || selectedDiskID.isEmpty)
+                        .help("Erases the selected external USB drive and writes the macOS, Linux, or Windows installer onto it.")
                     }
                 }
                 .padding(6)

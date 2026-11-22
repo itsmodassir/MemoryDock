@@ -88,6 +88,7 @@ struct DashboardView: View {
                         Label("Refresh", systemImage: "arrow.clockwise")
                     }
                     .disabled(vm.isRefreshing || vm.isDiskRefreshing || vm.isScanningFiles)
+                    .help("Refresh all live memory, app, disk, and service stats now")
                 }
             }
         }
@@ -101,16 +102,19 @@ struct DashboardView: View {
             HStack {
                 Text("Memory: \(formatBytes(vm.snapshot.usedBytes)) / \(formatBytes(vm.snapshot.totalBytes))")
                     .font(.headline)
+                    .help("Total Active + Wired + Compressed RAM currently in use out of your Mac's physical memory.")
                 Text("Pressure: \(vm.snapshot.pressureLabel)")
                     .font(.caption2.bold())
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
                     .background(pressureColor.opacity(0.18), in: Capsule())
                     .foregroundStyle(pressureColor)
+                    .help("Kernel Memory Pressure: Green (Normal) = smooth; Orange (Warning) = RAM getting tight; Red (Critical) = heavy SSD swapping.")
                 Spacer()
                 Text("Active \(formatBytes(vm.snapshot.activeBytes)) · Wired \(formatBytes(vm.snapshot.wiredBytes)) · Compressed \(formatBytes(vm.snapshot.compressedBytes)) · Swap \(formatBytes(vm.snapshot.swapUsedBytes)) (\(String(format: "%.1f", vm.pageoutsPerSec))/s) · Free \(formatBytes(vm.snapshot.freeBytes + vm.snapshot.inactiveBytes))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .help("Active: in use now · Wired: locked by macOS · Compressed: squished in RAM · Swap: spilled to SSD (pageouts/sec) · Free: ready for apps.")
             }
 
             ProgressView(value: vm.snapshot.usedFraction)
@@ -334,6 +338,7 @@ struct DashboardView: View {
                             Divider()
 
                             Toggle("Auto-Free RAM Guard (at \(Int(vm.autoFreeThreshold * 100))% or Warning Pressure)", isOn: $vm.autoFreeEnabled)
+                                .help("Automatically runs Low RAM Mode and notifies you whenever RAM crosses this threshold or Pressure hits Warning.")
                             if vm.autoFreeEnabled {
                                 Slider(value: $vm.autoFreeThreshold, in: 0.75...0.95, step: 0.05)
                             }
@@ -346,6 +351,7 @@ struct DashboardView: View {
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .tint(.green)
+                                .help("Applies your checked Low RAM Mode options right now to free memory.")
 
                                 Text("Pinned apps stay open.")
                                     .font(.caption)
@@ -508,6 +514,7 @@ struct DashboardView: View {
                         Button("Stop", role: .destructive) {
                             vm.killBackgroundProcess(proc)
                         }
+                        .help("Sends SIGTERM to stop this background process and free its RAM.")
                     }
                     .padding(.vertical, 2)
                 }
@@ -567,19 +574,23 @@ struct DashboardView: View {
                         Button("Inspect") {
                             inspectedApp = app
                         }
+                        .help("Open this app's 5-minute RAM history graph and inspect/kill individual child helper processes.")
 
                         Button(app.isFrozen ? "Resume" : "Freeze") {
                             vm.toggleFreezeApp(app)
                         }
                         .disabled(app.isProtected && !app.isFrozen)
+                        .help(app.isFrozen ? "Resume this paused app (SIGCONT) so you can use it again." : "Pause this app to 0% CPU (SIGSTOP) so macOS compresses its RAM while keeping your windows open.")
 
                         Button("Quit") {
                             vm.quitApp(app, force: false)
                         }
+                        .help("Ask this app to quit cleanly (like Cmd+Q), allowing it to save open work.")
                         Button("Force") {
                             vm.quitApp(app, force: true)
                         }
                         .foregroundStyle(.red)
+                        .help("Immediately force-quit this app without saving. Use if it is frozen or unresponsive.")
                     }
                     .padding(.vertical, 2)
                 }
@@ -607,6 +618,7 @@ struct DashboardView: View {
                     vm.closeAllInactiveTabs()
                 }
                 .disabled(vm.tabs.filter { !$0.isActive }.isEmpty)
+                .help("Closes every background browser tab while keeping your currently active tab open.")
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
@@ -694,6 +706,7 @@ struct DashboardView: View {
                         }
                         .tint(svc.isRunning ? .red : .green)
                         .disabled(!svc.isRunning && svc.startCommand.isEmpty)
+                        .help(svc.isRunning ? "Stop this background service or database to free RAM and CPU." : "Start this service back up.")
                     }
                     .padding(.vertical, 2)
                 }
@@ -752,13 +765,16 @@ struct DashboardView: View {
                                         Button("Browse") {
                                             browsingVolume = vol
                                         }
+                                        .help("Open MemoryDock's file browser for this drive to upload, open, or delete files.")
                                         Button("Finder") {
                                             NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: vol.mountPath)
                                         }
+                                        .help("Reveal this volume in macOS Finder.")
                                         if vol.isExternal {
                                             Button("Eject") {
                                                 vm.ejectVolume(vol)
                                             }
+                                            .help("Safely eject this drive (blocked if any app is currently running from it).")
                                         }
                                     }
                                     ProgressView(value: vol.usedFraction)

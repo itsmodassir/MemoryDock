@@ -284,6 +284,7 @@ struct DefaultDownloadsDriveView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .help("Pick an external drive to automatically receive all new completed downloads from Safari, Chrome, Brave, or any app.")
                 }
             }
             if let note = router.lastRoutedNote {

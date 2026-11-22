@@ -243,12 +243,14 @@ struct ApplicationsView: View {
                                             NSWorkspace.shared.open(URL(fileURLWithPath: app.path))
                                         }
                                         .disabled(app.isExternal && !app.isMounted)
+                                        .help("Launch this application.")
 
                                         if app.isExternal && app.isMounted {
                                             Button("Move to Internal") {
                                                 vm.moveAppBackToInternal(app)
                                             }
                                             .disabled(vm.isMovingApp)
+                                            .help("Copy this app back to your Mac's Internal SSD (/Applications) and remove the external symlink.")
                                         } else if !app.isExternal && !writableExternalVolumes.isEmpty {
                                             Menu("Move to External") {
                                                 ForEach(writableExternalVolumes) { vol in
@@ -258,6 +260,7 @@ struct ApplicationsView: View {
                                                 }
                                             }
                                             .disabled(vm.isMovingApp)
+                                            .help("Move this app to an external drive and keep a symlink in /Applications so it still opens normally.")
                                         }
                                     }
                                     Divider()

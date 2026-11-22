@@ -38,6 +38,7 @@ struct CacheCleanerView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(.green)
                         .disabled(vm.isClearingCache || safeBytes == 0)
+                        .help("Clears all caches marked Safe (excludes Trash and Local AI Models) after confirmation.")
                     }
                     .padding(6)
                 }
@@ -97,6 +98,7 @@ struct CacheCleanerView: View {
                                         cacheToClear = item
                                     }
                                     .disabled(vm.isClearingCache || item.sizeBytes == 0)
+                                    .help(item.impactDescription)
                                 }
 
                                 Text("What happens if cleared: \(item.impactDescription)")
