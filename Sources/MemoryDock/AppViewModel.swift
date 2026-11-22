@@ -15,6 +15,9 @@ final class AppViewModel: ObservableObject {
     @Published var duplicateFileIDs: Set<String> = []
     @Published var cloudMounts: [CloudMountItem] = []
     @Published var s3Configs: [S3ConnectionConfig] = []
+    @Published var externalPhysicalDisks: [ExternalDiskTarget] = []
+    @Published var isDiskToolBusy = false
+    @Published var diskToolMessage: String?
     @Published var isRefreshing = false
     @Published var isDiskRefreshing = false
     @Published var isScanningFiles = false
@@ -411,6 +414,47 @@ final class AppViewModel: ObservableObject {
     private func saveS3Configs() {
         if let data = try? JSONEncoder().encode(s3Configs) {
             UserDefaults.standard.set(data, forKey: s3ConfigsKey)
+        }
+    }
+
+    func refreshExternalPhysicalDisks() {
+        Task.detached(priority: .userInitiated) {
+            let disks = BootableUSBManager.listExternalPhysicalDisks()
+            await MainActor.run {
+                self.externalPhysicalDisks = disks
+            }
+        }
+    }
+
+    func formatExternalVolume(_ volume: VolumeItem, format: DiskFormatOption, newName: String) {
+        guard !isDiskToolBusy else { return }
+        isDiskToolBusy = true
+        diskToolMessage = "Formatting \(volume.name) as \(format.rawValue)..."
+        Task.detached(priority: .userInitiated) {
+            let msg = BootableUSBManager.formatVolume(mountPath: volume.mountPath, format: format, newName: newName)
+            await MainActor.run {
+                self.diskToolMessage = msg
+                self.statusMessage = msg
+                self.isDiskToolBusy = false
+                self.refreshDisk()
+                self.refreshExternalPhysicalDisks()
+            }
+        }
+    }
+
+    func createBootableUSB(osType: BootableOSType, sourcePath: String, disk: ExternalDiskTarget) {
+        guard !isDiskToolBusy else { return }
+        isDiskToolBusy = true
+        diskToolMessage = "Creating \(osType.rawValue) bootable USB on \(disk.deviceIdentifier)... This can take several minutes."
+        Task.detached(priority: .userInitiated) {
+            let msg = BootableUSBManager.createBootableUSB(osType: osType, sourcePath: sourcePath, targetDisk: disk)
+            await MainActor.run {
+                self.diskToolMessage = msg
+                self.statusMessage = msg
+                self.isDiskToolBusy = false
+                self.refreshDisk()
+                self.refreshExternalPhysicalDisks()
+            }
         }
     }
 }

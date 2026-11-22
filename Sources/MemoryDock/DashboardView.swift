@@ -605,6 +605,8 @@ struct DashboardView: View {
                     )
                 }
 
+                DiskToolsView(vm: vm)
+
                 GroupBox("Desktop, Downloads & Documents") {
                     VStack(spacing: 8) {
                         ForEach(vm.userFolders) { folder in
