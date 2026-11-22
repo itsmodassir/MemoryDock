@@ -236,7 +236,7 @@ final class RemoteHostServer: ObservableObject {
         String(format: "%06d", Int.random(in: 100000...999999))
     }
 
-    static func localIPAddress() -> String? {
+    nonisolated static func localIPAddress() -> String? {
         var address: String?
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
         if getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr {

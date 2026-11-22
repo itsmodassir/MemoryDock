@@ -101,6 +101,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     case cache = "Cache Cleaner"
     case cloud = "Cloud Storage"
     case remote = "Remote Macs"
+    case profile = "Device & Profile"
 
     var id: String { rawValue }
 
@@ -116,7 +117,12 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         case .cache: return "sparkles"
         case .cloud: return "icloud.fill"
         case .remote: return "laptopcomputer.and.iphone"
+        case .profile: return "person.crop.circle.fill"
         }
+    }
+
+    static var mainSections: [SidebarSection] {
+        allCases.filter { $0 != .profile }
     }
 }
 

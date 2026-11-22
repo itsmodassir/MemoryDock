@@ -18,11 +18,42 @@ struct DashboardView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(SidebarSection.allCases, selection: $selection) { section in
-                Label(section.rawValue, systemImage: section.icon)
-                    .tag(section)
+            VStack(spacing: 0) {
+                List(SidebarSection.mainSections, selection: $selection) { section in
+                    Label(section.rawValue, systemImage: section.icon)
+                        .tag(section)
+                }
+
+                Divider()
+
+                Button {
+                    selection = .profile
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(selection == .profile ? Color.white : Color.accentColor)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(NSFullUserName())
+                                .font(.caption.bold())
+                                .lineLimit(1)
+                            Text(vm.deviceProfile?.modelName ?? "About This Mac")
+                                .font(.caption2)
+                                .foregroundStyle(selection == .profile ? Color.white.opacity(0.85) : .secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                    }
+                    .padding(10)
+                    .background(
+                        selection == .profile ? Color.accentColor : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 8)
+                    )
+                    .padding(8)
+                }
+                .buttonStyle(.plain)
             }
-            .navigationSplitViewColumnWidth(min: 190, ideal: 210)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 215)
         } detail: {
             VStack(spacing: 0) {
                 memoryHeaderBar
@@ -122,6 +153,8 @@ struct DashboardView: View {
             CloudStorageView(vm: vm)
         case .remote:
             RemoteMacView(server: vm.remoteServer, client: vm.remoteClient)
+        case .profile:
+            DeviceProfileView(vm: vm)
         }
     }
 
@@ -153,14 +186,16 @@ struct DashboardView: View {
                                 )
                                 LineMark(
                                     x: .value("Time", pt.timestamp),
-                                    y: .value("Used (GB)", pt.usedGB)
+                                    y: .value("Used (GB)", pt.usedGB),
+                                    series: .value("Metric", "Used")
                                 )
                                 .foregroundStyle(Color.accentColor)
                                 .lineStyle(StrokeStyle(lineWidth: 2))
 
                                 LineMark(
                                     x: .value("Time", pt.timestamp),
-                                    y: .value("Compressed (GB)", pt.compressedGB)
+                                    y: .value("Compressed (GB)", pt.compressedGB),
+                                    series: .value("Metric", "Compressed")
                                 )
                                 .foregroundStyle(Color.orange)
                                 .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))

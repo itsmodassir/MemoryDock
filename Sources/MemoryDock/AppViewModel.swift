@@ -23,6 +23,9 @@ final class AppViewModel: ObservableObject {
     @Published var cacheItems: [CacheItem] = []
     @Published var isScanningCaches = false
     @Published var isClearingCache = false
+    @Published var deviceProfile: DeviceProfileInfo?
+    @Published var isCheckingUpdates = false
+    @Published var softwareUpdateOutput: String?
     @Published var isRefreshing = false
     @Published var isDiskRefreshing = false
     @Published var isScanningFiles = false
@@ -582,6 +585,28 @@ final class AppViewModel: ObservableObject {
                 self.isClearingCache = false
                 self.scanCaches()
                 self.refreshVolumesOnly()
+            }
+        }
+    }
+
+    func refreshDeviceProfile() {
+        Task.detached(priority: .userInitiated) {
+            let info = DeviceProfileManager.fetchProfile()
+            await MainActor.run {
+                self.deviceProfile = info
+            }
+        }
+    }
+
+    func checkSoftwareUpdates() {
+        guard !isCheckingUpdates else { return }
+        isCheckingUpdates = true
+        softwareUpdateOutput = "Checking Apple Software Update servers..."
+        Task.detached(priority: .userInitiated) {
+            let out = DeviceProfileManager.checkSoftwareUpdates()
+            await MainActor.run {
+                self.softwareUpdateOutput = out
+                self.isCheckingUpdates = false
             }
         }
     }
