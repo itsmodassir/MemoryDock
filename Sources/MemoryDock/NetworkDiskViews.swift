@@ -247,3 +247,51 @@ struct VolumeBrowserSheet: View {
         }
     }
 }
+
+struct DefaultDownloadsDriveView: View {
+    @ObservedObject var router: DownloadsRouter
+    let writableVolumes: [VolumeItem]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(router.isEnabled && !router.targetVolumePath.isEmpty
+                         ? "Active Folder: \(router.targetFolder)"
+                         : "Currently using Internal SSD (~/Downloads)")
+                        .fontWeight(.medium)
+                    Text("Auto-routes completed downloads from Safari, Chrome, Brave, AirDrop, or any app.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if router.isEnabled && !router.targetVolumePath.isEmpty {
+                    Toggle("Auto-Route", isOn: Binding(
+                        get: { router.isEnabled },
+                        set: { router.toggleAutoRoute($0) }
+                    ))
+                    .labelsHidden()
+                    Button("Reset to Internal") {
+                        router.resetToInternal()
+                    }
+                }
+                if !writableVolumes.isEmpty {
+                    Menu("Set Default Drive") {
+                        ForEach(writableVolumes) { vol in
+                            Button("\(vol.name) (\(formatBytes(vol.availableBytes)) free)") {
+                                router.setDefaultDrive(vol.mountPath)
+                            }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            if let note = router.lastRoutedNote {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            }
+        }
+        .padding(6)
+    }
+}

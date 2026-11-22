@@ -26,6 +26,7 @@ final class AppViewModel: ObservableObject {
     let networkDiscovery = NetworkDiscovery()
     let remoteServer = RemoteHostServer()
     let remoteClient = RemoteMacClient()
+    let downloadsRouter = DownloadsRouter()
 
     @Published var presetCloseUnpinnedApps = true
     @Published var presetCloseInactiveTabs = true

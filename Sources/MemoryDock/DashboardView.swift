@@ -598,6 +598,13 @@ struct DashboardView: View {
                     .padding(6)
                 }
 
+                GroupBox("Default Downloads Drive (Internet & Any App)") {
+                    DefaultDownloadsDriveView(
+                        router: vm.downloadsRouter,
+                        writableVolumes: writableExternalVolumes
+                    )
+                }
+
                 GroupBox("Desktop, Downloads & Documents") {
                     VStack(spacing: 8) {
                         ForEach(vm.userFolders) { folder in
