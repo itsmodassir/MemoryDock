@@ -27,6 +27,13 @@ struct MemorySnapshot: Sendable {
     )
 }
 
+struct MemoryHistoryPoint: Identifiable, Sendable {
+    let id = UUID()
+    let timestamp: Date
+    let usedGB: Double
+    let compressedGB: Double
+}
+
 struct AppItem: Identifiable, Sendable {
     let id: String // bundleIdentifier or pid fallback
     let pid: pid_t

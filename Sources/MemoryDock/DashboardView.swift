@@ -1,3 +1,4 @@
+import Charts
 import SwiftUI
 
 struct DashboardView: View {
@@ -120,10 +121,68 @@ struct DashboardView: View {
         let internalVol = vm.volumes.first { !$0.isExternal }
         let extCount = vm.volumes.filter(\.isExternal).count
         let cloudTotal = vm.cloudMounts.count + vm.s3Configs.count
+        let cacheTotal = vm.cacheItems.reduce(UInt64(0)) { $0 + $1.sizeBytes }
+        let extAppCount = vm.diskApps.filter(\.isExternal).count
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 185), spacing: 12)], spacing: 12) {
+                // Live RAM Graph + Breakdown
+                GroupBox("Live RAM Usage & Breakdown") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if vm.memoryHistory.count >= 2 {
+                            let totalGB = max(Double(vm.snapshot.totalBytes) / 1_073_741_824.0, 1.0)
+                            Chart(vm.memoryHistory) { pt in
+                                AreaMark(
+                                    x: .value("Time", pt.timestamp),
+                                    y: .value("Used (GB)", pt.usedGB)
+                                )
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color.accentColor.opacity(0.45), Color.accentColor.opacity(0.05)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                LineMark(
+                                    x: .value("Time", pt.timestamp),
+                                    y: .value("Used (GB)", pt.usedGB)
+                                )
+                                .foregroundStyle(Color.accentColor)
+                                .lineStyle(StrokeStyle(lineWidth: 2))
+
+                                LineMark(
+                                    x: .value("Time", pt.timestamp),
+                                    y: .value("Compressed (GB)", pt.compressedGB)
+                                )
+                                .foregroundStyle(Color.orange)
+                                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                            }
+                            .chartYScale(domain: 0...totalGB)
+                            .chartXAxis(.hidden)
+                            .frame(height: 110)
+                        } else {
+                            Text("Collecting live RAM samples...")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(height: 60)
+                        }
+
+                        HStack(spacing: 16) {
+                            Label("Active: \(formatBytes(vm.snapshot.activeBytes))", systemImage: "circle.fill")
+                                .font(.caption).foregroundStyle(.blue)
+                            Label("Wired: \(formatBytes(vm.snapshot.wiredBytes))", systemImage: "circle.fill")
+                                .font(.caption).foregroundStyle(.purple)
+                            Label("Compressed: \(formatBytes(vm.snapshot.compressedBytes))", systemImage: "circle.fill")
+                                .font(.caption).foregroundStyle(.orange)
+                            Label("Free/Reclaimable: \(formatBytes(vm.snapshot.freeBytes + vm.snapshot.inactiveBytes))", systemImage: "circle.fill")
+                                .font(.caption).foregroundStyle(.green)
+                        }
+                    }
+                    .padding(6)
+                }
+
+                // 9 Feature Summary Cards (3x3 balanced grid)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 12)], spacing: 12) {
                     Button { selection = .apps } label: {
                         summaryCard(
                             title: "Running Apps",
@@ -158,8 +217,18 @@ struct DashboardView: View {
                         summaryCard(
                             title: "Disk & Wi-Fi Drives",
                             value: internalVol.map { "\(formatBytes($0.availableBytes)) free" } ?? "--",
-                            subtitle: "\(extCount) external / Wi-Fi disk\(extCount == 1 ? "" : "s")",
+                            subtitle: "\(extCount) external / Wi-Fi",
                             color: .teal
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { selection = .installedApps } label: {
+                        summaryCard(
+                            title: "Applications",
+                            value: vm.diskApps.isEmpty ? "View Apps" : "\(vm.diskApps.count) apps",
+                            subtitle: vm.diskApps.isEmpty ? "Categorized & movable" : "\(extAppCount) on External",
+                            color: .cyan
                         )
                     }
                     .buttonStyle(.plain)
@@ -170,6 +239,16 @@ struct DashboardView: View {
                             value: vm.organizedFiles.isEmpty ? "Scan Files" : "\(vm.organizedFiles.count) files",
                             subtitle: vm.organizedFiles.isEmpty ? "Docs, Images, Video, Audio" : "Duplicates: \(vm.duplicateFileIDs.count)",
                             color: .green
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { selection = .cache } label: {
+                        summaryCard(
+                            title: "Cache Cleaner",
+                            value: cacheTotal > 0 ? formatBytes(cacheTotal) : "Scan Caches",
+                            subtitle: cacheTotal > 0 ? "\(vm.cacheItems.count) cache groups" : "macOS, Xcode, npm, Gradle",
+                            color: .yellow
                         )
                     }
                     .buttonStyle(.plain)
@@ -224,9 +303,21 @@ struct DashboardView: View {
                     GroupBox("Quick Actions") {
                         VStack(alignment: .leading, spacing: 8) {
                             Button {
+                                selection = .installedApps
+                            } label: {
+                                Label("Browse Categorized Applications & Move to External", systemImage: "square.grid.2x2.fill")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            Button {
                                 selection = .disk
                             } label: {
-                                Label("Move Apps & Folders to External / Wi-Fi Disk", systemImage: "externaldrive.badge.plus")
+                                Label("Default Downloads Drive, Format & Bootable USB", systemImage: "externaldrive.badge.plus")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            Button {
+                                selection = .cache
+                            } label: {
+                                Label("Scan & Clear macOS / Developer Caches", systemImage: "sparkles")
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             Button {
@@ -245,12 +336,6 @@ struct DashboardView: View {
                                 selection = .remote
                             } label: {
                                 Label("Control Another Mac on Same Wi-Fi", systemImage: "laptopcomputer.and.iphone")
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            Button {
-                                selection = .services
-                            } label: {
-                                Label("Turn Off Unused Databases & Background Jobs", systemImage: "cylinder.split.1x2")
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }

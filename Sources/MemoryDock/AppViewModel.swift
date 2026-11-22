@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class AppViewModel: ObservableObject {
     @Published var snapshot: MemorySnapshot = .empty
+    @Published var memoryHistory: [MemoryHistoryPoint] = []
     @Published var apps: [AppItem] = []
     @Published var tabs: [BrowserTabItem] = []
     @Published var services: [ServiceItem] = []
@@ -82,6 +83,19 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    private func recordMemoryPoint(_ snap: MemorySnapshot) {
+        guard snap.totalBytes > 0 else { return }
+        let pt = MemoryHistoryPoint(
+            timestamp: Date(),
+            usedGB: Double(snap.usedBytes) / 1_073_741_824.0,
+            compressedGB: Double(snap.compressedBytes) / 1_073_741_824.0
+        )
+        memoryHistory.append(pt)
+        if memoryHistory.count > 30 {
+            memoryHistory.removeFirst(memoryHistory.count - 30)
+        }
+    }
+
     func refreshVolumesOnly() {
         Task.detached(priority: .userInitiated) {
             let vols = DiskManager.fetchVolumes()
@@ -107,6 +121,7 @@ final class AppViewModel: ObservableObject {
             let volList = DiskManager.fetchVolumes()
             await MainActor.run {
                 self.snapshot = snap
+                self.recordMemoryPoint(snap)
                 self.volumes = volList
             }
         }
@@ -127,6 +142,7 @@ final class AppViewModel: ObservableObject {
 
             await MainActor.run {
                 self.snapshot = snap
+                self.recordMemoryPoint(snap)
                 self.apps = appList
                 if includeBrowserTabs {
                     self.tabs = tabList
