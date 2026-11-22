@@ -28,6 +28,14 @@ enum SystemMonitor {
             }
         }
 
+        var swap = xsw_usage()
+        var swapSize = MemoryLayout<xsw_usage>.size
+        sysctlbyname("vm.swapusage", &swap, &swapSize, nil, 0)
+
+        var pressure: Int32 = 1
+        var pressureSize = MemoryLayout<Int32>.size
+        sysctlbyname("kern.memorystatus_vm_pressure_level", &pressure, &pressureSize, nil, 0)
+
         guard result == KERN_SUCCESS else {
             return MemorySnapshot(
                 totalBytes: totalBytes,
@@ -35,7 +43,10 @@ enum SystemMonitor {
                 wiredBytes: 0,
                 compressedBytes: 0,
                 inactiveBytes: 0,
-                freeBytes: 0
+                freeBytes: 0,
+                swapUsedBytes: swap.xsu_used,
+                swapTotalBytes: swap.xsu_total,
+                pressureLevel: Int(pressure)
             )
         }
 
@@ -45,7 +56,10 @@ enum SystemMonitor {
             wiredBytes: UInt64(stats.wire_count) * pageBytes,
             compressedBytes: UInt64(stats.compressor_page_count) * pageBytes,
             inactiveBytes: (UInt64(stats.inactive_count) + UInt64(stats.speculative_count)) * pageBytes,
-            freeBytes: UInt64(stats.free_count) * pageBytes
+            freeBytes: UInt64(stats.free_count) * pageBytes,
+            swapUsedBytes: swap.xsu_used,
+            swapTotalBytes: swap.xsu_total,
+            pressureLevel: Int(pressure)
         )
     }
 
@@ -75,7 +89,9 @@ enum SystemMonitor {
 
     static func buildAppItems(
         processes: [ProcessInfoRow],
-        protectedBundleIDs: Set<String>
+        protectedBundleIDs: Set<String>,
+        frozenPIDs: Set<pid_t>,
+        previousRSS: [String: UInt64]
     ) -> [AppItem] {
         let runningApps = NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular }
@@ -108,6 +124,8 @@ enum SystemMonitor {
             let bundleID = app.bundleIdentifier
             let key = bundleID ?? "pid-\(pid)"
             let rss = subtreeRSS(rootPID: pid)
+            let prev = previousRSS[key] ?? rss
+            let delta = Int64(rss) - Int64(prev)
             let isProtected = bundleID.map { protectedBundleIDs.contains($0) } ?? false
             items.append(
                 AppItem(
@@ -116,12 +134,44 @@ enum SystemMonitor {
                     name: name,
                     bundleIdentifier: bundleID,
                     rssBytes: rss,
-                    isProtected: isProtected
+                    memoryDeltaBytes: delta,
+                    isProtected: isProtected,
+                    isFrozen: frozenPIDs.contains(pid)
                 )
             )
         }
 
         return items.sorted { $0.rssBytes > $1.rssBytes }
+    }
+
+    static func buildBackgroundProcesses(processes: [ProcessInfoRow]) -> [BackgroundProcessItem] {
+        let currentUser = NSUserName()
+        let guiBundlePIDs = Set(
+            NSWorkspace.shared.runningApplications
+                .filter { $0.activationPolicy == .regular }
+                .map(\.processIdentifier)
+        )
+        return processes
+            .filter { row in
+                row.rssBytes >= 25 * 1024 * 1024
+                    && !guiBundlePIDs.contains(row.pid)
+                    && row.user == currentUser
+                    && !row.command.contains(".app/Contents/")
+            }
+            .sorted { $0.rssBytes > $1.rssBytes }
+            .prefix(40)
+            .map { row in
+                let exe = row.command.split(separator: " ").first.map(String.init) ?? row.command
+                let name = URL(fileURLWithPath: exe).lastPathComponent
+                return BackgroundProcessItem(
+                    id: row.pid,
+                    pid: row.pid,
+                    name: name,
+                    command: row.command,
+                    user: row.user,
+                    rssBytes: row.rssBytes
+                )
+            }
     }
 
     @discardableResult

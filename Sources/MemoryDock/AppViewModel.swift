@@ -6,6 +6,7 @@ final class AppViewModel: ObservableObject {
     @Published var snapshot: MemorySnapshot = .empty
     @Published var memoryHistory: [MemoryHistoryPoint] = []
     @Published var apps: [AppItem] = []
+    @Published var backgroundProcesses: [BackgroundProcessItem] = []
     @Published var tabs: [BrowserTabItem] = []
     @Published var services: [ServiceItem] = []
     @Published var volumes: [VolumeItem] = []
@@ -38,10 +39,15 @@ final class AppViewModel: ObservableObject {
     @Published var presetCloseUnpinnedApps = true
     @Published var presetCloseInactiveTabs = true
     @Published var presetStopBackgroundServices = true
+    @Published var autoFreeEnabled = false
+    @Published var autoFreeThreshold: Double = 0.88
 
     private let protectedKey = "MemoryDock.protectedBundleIDs"
     private let s3ConfigsKey = "MemoryDock.s3Configs"
     private var protectedBundleIDs: Set<String>
+    private var frozenPIDs: Set<pid_t> = []
+    private var previousRSSByApp: [String: UInt64] = [:]
+    private var lastAutoFreeAt: Date = .distantPast
     private var refreshTimer: Timer?
 
     init() {
@@ -123,6 +129,7 @@ final class AppViewModel: ObservableObject {
                 self.snapshot = snap
                 self.recordMemoryPoint(snap)
                 self.volumes = volList
+                self.checkAutoFreeGuard(snap)
             }
         }
     }
@@ -131,11 +138,19 @@ final class AppViewModel: ObservableObject {
         guard !isRefreshing else { return }
         isRefreshing = true
         let protected = protectedBundleIDs
+        let frozen = frozenPIDs
+        let prevRSS = previousRSSByApp
 
         Task.detached(priority: .userInitiated) {
             let snap = SystemMonitor.readMemorySnapshot()
             let procs = SystemMonitor.listProcesses()
-            let appList = SystemMonitor.buildAppItems(processes: procs, protectedBundleIDs: protected)
+            let appList = SystemMonitor.buildAppItems(
+                processes: procs,
+                protectedBundleIDs: protected,
+                frozenPIDs: frozen,
+                previousRSS: prevRSS
+            )
+            let bgList = SystemMonitor.buildBackgroundProcesses(processes: procs)
             let tabList = includeBrowserTabs ? BrowserManager.fetchOpenTabs() : []
             let svcList = ServiceManager.fetchServices(processes: procs)
             let volList = DiskManager.fetchVolumes()
@@ -144,6 +159,10 @@ final class AppViewModel: ObservableObject {
                 self.snapshot = snap
                 self.recordMemoryPoint(snap)
                 self.apps = appList
+                for app in appList {
+                    self.previousRSSByApp[app.id] = app.rssBytes
+                }
+                self.backgroundProcesses = bgList
                 if includeBrowserTabs {
                     self.tabs = tabList
                 }
@@ -166,6 +185,10 @@ final class AppViewModel: ObservableObject {
     }
 
     func quitApp(_ app: AppItem, force: Bool = false) {
+        if frozenPIDs.contains(app.pid) {
+            kill(app.pid, SIGCONT)
+            frozenPIDs.remove(app.pid)
+        }
         guard let running = NSRunningApplication(processIdentifier: app.pid) else { return }
         if force {
             running.forceTerminate()
@@ -174,6 +197,44 @@ final class AppViewModel: ObservableObject {
         }
         statusMessage = "\(force ? "Force quit" : "Quit") \(app.name)"
         scheduleQuickRefresh()
+    }
+
+    func toggleFreezeApp(_ app: AppItem) {
+        if frozenPIDs.contains(app.pid) {
+            kill(app.pid, SIGCONT)
+            frozenPIDs.remove(app.pid)
+            statusMessage = "Resumed \(app.name)"
+        } else {
+            kill(app.pid, SIGSTOP)
+            frozenPIDs.insert(app.pid)
+            statusMessage = "Frozen \(app.name) (0% CPU)"
+        }
+        refresh()
+    }
+
+    func unfreezeAllApps() {
+        for pid in frozenPIDs {
+            kill(pid, SIGCONT)
+        }
+        frozenPIDs.removeAll()
+    }
+
+    func killBackgroundProcess(_ proc: BackgroundProcessItem) {
+        kill(proc.pid, SIGTERM)
+        statusMessage = "Stopped \(proc.name) (PID \(proc.pid))"
+        scheduleQuickRefresh()
+    }
+
+    private func checkAutoFreeGuard(_ snap: MemorySnapshot) {
+        guard autoFreeEnabled else { return }
+        guard Date().timeIntervalSince(lastAutoFreeAt) >= 60 else { return }
+        if snap.usedFraction >= autoFreeThreshold || snap.pressureLevel >= 2 {
+            lastAutoFreeAt = Date()
+            runLowRamMode()
+            Task.detached {
+                SystemMonitor.runShell("/usr/bin/osascript -e 'display notification \"Auto-Free RAM Guard triggered to relieve memory pressure.\" with title \"MemoryDock\"'")
+            }
+        }
     }
 
     func closeTab(_ tab: BrowserTabItem) {

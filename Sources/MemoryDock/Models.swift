@@ -7,6 +7,9 @@ struct MemorySnapshot: Sendable {
     let compressedBytes: UInt64
     let inactiveBytes: UInt64
     let freeBytes: UInt64
+    let swapUsedBytes: UInt64
+    let swapTotalBytes: UInt64
+    let pressureLevel: Int // 1 = Normal, 2 = Warning, 4 = Critical
 
     var usedBytes: UInt64 {
         activeBytes + wiredBytes + compressedBytes
@@ -17,13 +20,24 @@ struct MemorySnapshot: Sendable {
         return min(1.0, Double(usedBytes) / Double(totalBytes))
     }
 
+    var pressureLabel: String {
+        switch pressureLevel {
+        case 2: return "Warning"
+        case 4: return "Critical"
+        default: return "Normal"
+        }
+    }
+
     static let empty = MemorySnapshot(
         totalBytes: 0,
         activeBytes: 0,
         wiredBytes: 0,
         compressedBytes: 0,
         inactiveBytes: 0,
-        freeBytes: 0
+        freeBytes: 0,
+        swapUsedBytes: 0,
+        swapTotalBytes: 0,
+        pressureLevel: 1
     )
 }
 
@@ -40,7 +54,18 @@ struct AppItem: Identifiable, Sendable {
     let name: String
     let bundleIdentifier: String?
     let rssBytes: UInt64
+    let memoryDeltaBytes: Int64
     let isProtected: Bool
+    let isFrozen: Bool
+}
+
+struct BackgroundProcessItem: Identifiable, Sendable {
+    let id: pid_t
+    let pid: pid_t
+    let name: String
+    let command: String
+    let user: String
+    let rssBytes: UInt64
 }
 
 struct BrowserTabItem: Identifiable, Hashable, Sendable {

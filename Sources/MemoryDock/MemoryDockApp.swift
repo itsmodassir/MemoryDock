@@ -61,6 +61,7 @@ struct MemoryDockApp: App {
                     }
                 }
                 Button("Quit MemoryDock") {
+                    vm.unfreezeAllApps()
                     NSApp.terminate(nil)
                 }
             }

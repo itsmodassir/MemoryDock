@@ -14,6 +14,7 @@ struct DashboardView: View {
     @State private var browsingVolume: VolumeItem? = nil
     @State private var showDuplicatesOnly = false
     @State private var showLargeFilesOnly = false
+    @State private var showBackgroundProcesses = false
 
     var body: some View {
         NavigationSplitView {
@@ -57,12 +58,19 @@ struct DashboardView: View {
     }
 
     private var memoryHeaderBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let pressureColor: Color = vm.snapshot.pressureLevel >= 4 ? .red : (vm.snapshot.pressureLevel == 2 ? .orange : .green)
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Memory: \(formatBytes(vm.snapshot.usedBytes)) / \(formatBytes(vm.snapshot.totalBytes))")
                     .font(.headline)
+                Text("Pressure: \(vm.snapshot.pressureLabel)")
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(pressureColor.opacity(0.18), in: Capsule())
+                    .foregroundStyle(pressureColor)
                 Spacer()
-                Text("Active \(formatBytes(vm.snapshot.activeBytes)) · Wired \(formatBytes(vm.snapshot.wiredBytes)) · Compressed \(formatBytes(vm.snapshot.compressedBytes)) · Free/Reclaimable \(formatBytes(vm.snapshot.freeBytes + vm.snapshot.inactiveBytes))")
+                Text("Active \(formatBytes(vm.snapshot.activeBytes)) · Wired \(formatBytes(vm.snapshot.wiredBytes)) · Compressed \(formatBytes(vm.snapshot.compressedBytes)) · Swap \(formatBytes(vm.snapshot.swapUsedBytes)) · Free \(formatBytes(vm.snapshot.freeBytes + vm.snapshot.inactiveBytes))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -281,6 +289,13 @@ struct DashboardView: View {
                             Toggle("Close all inactive browser tabs", isOn: $vm.presetCloseInactiveTabs)
                             Toggle("Stop running databases & background services", isOn: $vm.presetStopBackgroundServices)
 
+                            Divider()
+
+                            Toggle("Auto-Free RAM Guard (at \(Int(vm.autoFreeThreshold * 100))% or Warning Pressure)", isOn: $vm.autoFreeEnabled)
+                            if vm.autoFreeEnabled {
+                                Slider(value: $vm.autoFreeThreshold, in: 0.75...0.95, step: 0.05)
+                            }
+
                             HStack {
                                 Button {
                                     vm.runLowRamMode()
@@ -400,42 +415,119 @@ struct DashboardView: View {
     }
 
     private var appsTab: some View {
-        let filtered = vm.apps.filter {
+        let filteredApps = vm.apps.filter {
             searchText.isEmpty || $0.name.localizedCaseInsensitiveContains(searchText)
         }
-        return List(filtered) { app in
-            HStack(spacing: 12) {
-                Button {
-                    vm.toggleProtection(for: app)
-                } label: {
-                    Image(systemName: app.isProtected ? "pin.fill" : "pin")
-                        .foregroundStyle(app.isProtected ? .blue : .secondary)
-                }
-                .buttonStyle(.plain)
-                .help(app.isProtected ? "Protected from Low RAM Mode" : "Pin to protect from Low RAM Mode")
+        let filteredBG = vm.backgroundProcesses.filter {
+            searchText.isEmpty
+                || $0.name.localizedCaseInsensitiveContains(searchText)
+                || $0.command.localizedCaseInsensitiveContains(searchText)
+        }
 
-                VStack(alignment: .leading) {
-                    Text(app.name).fontWeight(.medium)
-                    if let bundle = app.bundleIdentifier {
-                        Text(bundle).font(.caption2).foregroundStyle(.secondary)
-                    }
+        return VStack(spacing: 0) {
+            HStack {
+                Picker("View", selection: $showBackgroundProcesses) {
+                    Text("Desktop Apps (\(filteredApps.count))").tag(false)
+                    Text("Background Processes (\(filteredBG.count))").tag(true)
                 }
-
+                .pickerStyle(.segmented)
+                .frame(width: 360)
                 Spacer()
-
-                Text(formatBytes(app.rssBytes))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-
-                Button("Quit") {
-                    vm.quitApp(app, force: false)
+                if !showBackgroundProcesses {
+                    Text("Freeze pauses CPU to 0% & lets macOS reclaim RAM")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Button("Force") {
-                    vm.quitApp(app, force: true)
-                }
-                .foregroundStyle(.red)
             }
-            .padding(.vertical, 2)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+
+            Divider()
+
+            if showBackgroundProcesses {
+                List(filteredBG) { proc in
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(proc.name).fontWeight(.medium)
+                                Text("PID \(proc.pid)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text(proc.command)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Text(formatBytes(proc.rssBytes))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                        Button("Stop", role: .destructive) {
+                            vm.killBackgroundProcess(proc)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            } else {
+                List(filteredApps) { app in
+                    HStack(spacing: 12) {
+                        Button {
+                            vm.toggleProtection(for: app)
+                        } label: {
+                            Image(systemName: app.isProtected ? "pin.fill" : "pin")
+                                .foregroundStyle(app.isProtected ? .blue : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help(app.isProtected ? "Protected from Low RAM Mode" : "Pin to protect from Low RAM Mode")
+
+                        VStack(alignment: .leading) {
+                            HStack(spacing: 6) {
+                                Text(app.name).fontWeight(.medium)
+                                if app.isFrozen {
+                                    Text("Frozen")
+                                        .font(.caption2.bold())
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 1)
+                                        .background(Color.cyan.opacity(0.2), in: Capsule())
+                                        .foregroundStyle(.cyan)
+                                }
+                                if app.memoryDeltaBytes > 25 * 1024 * 1024 {
+                                    Text("+\(formatBytes(UInt64(app.memoryDeltaBytes)))")
+                                        .font(.caption2.bold())
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 1)
+                                        .background(Color.orange.opacity(0.2), in: Capsule())
+                                        .foregroundStyle(.orange)
+                                }
+                            }
+                            if let bundle = app.bundleIdentifier {
+                                Text(bundle).font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+
+                        Spacer()
+
+                        Text(formatBytes(app.rssBytes))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+
+                        Button(app.isFrozen ? "Resume" : "Freeze") {
+                            vm.toggleFreezeApp(app)
+                        }
+                        .disabled(app.isProtected && !app.isFrozen)
+
+                        Button("Quit") {
+                            vm.quitApp(app, force: false)
+                        }
+                        Button("Force") {
+                            vm.quitApp(app, force: true)
+                        }
+                        .foregroundStyle(.red)
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
         }
     }
 
