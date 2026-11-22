@@ -65,6 +65,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     case services = "Databases & Background"
     case disk = "Disk Management"
     case files = "File Organizer"
+    case remote = "Remote Macs"
 
     var id: String { rawValue }
 
@@ -76,6 +77,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         case .services: return "cylinder.split.1x2"
         case .disk: return "externaldrive.connected.to.line.below"
         case .files: return "folder.badge.gearshape"
+        case .remote: return "laptopcomputer.and.iphone"
         }
     }
 }

@@ -22,6 +22,8 @@ final class AppViewModel: ObservableObject {
     @Published var statusMessage: String?
 
     let networkDiscovery = NetworkDiscovery()
+    let remoteServer = RemoteHostServer()
+    let remoteClient = RemoteMacClient()
 
     @Published var presetCloseUnpinnedApps = true
     @Published var presetCloseInactiveTabs = true
@@ -45,6 +47,7 @@ final class AppViewModel: ObservableObject {
         if let selfID = Bundle.main.bundleIdentifier {
             self.protectedBundleIDs.insert(selfID)
         }
+        remoteServer.attach(viewModel: self)
         refresh()
         startAutoRefresh()
         observeVolumeChanges()
