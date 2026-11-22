@@ -34,10 +34,13 @@ final class DownloadsRouter: ObservableObject {
 
         let dest = "\(volumePath)/Downloads"
         try? FileManager.default.createDirectory(atPath: dest, withIntermediateDirectories: true)
-        applyBrowserDownloadFolder(dest)
         startWatcher()
         routeCompletedDownloads()
         lastRoutedNote = "Default downloads set to \(dest)"
+
+        Task.detached(priority: .utility) {
+            Self.applyBrowserDownloadFolder(dest)
+        }
     }
 
     func resetToInternal() {
@@ -47,8 +50,11 @@ final class DownloadsRouter: ObservableObject {
         UserDefaults.standard.set("", forKey: volumeKey)
         stopWatcher()
         let internalDownloads = NSHomeDirectory() + "/Downloads"
-        applyBrowserDownloadFolder(internalDownloads)
         lastRoutedNote = "Reset default downloads to ~/Downloads"
+
+        Task.detached(priority: .utility) {
+            Self.applyBrowserDownloadFolder(internalDownloads)
+        }
     }
 
     func toggleAutoRoute(_ enabled: Bool) {
@@ -72,16 +78,18 @@ final class DownloadsRouter: ObservableObject {
         let src = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
             eventMask: [.write, .rename],
-            queue: DispatchQueue.global(qos: .utility)
+            queue: DispatchQueue.main
         )
-        src.setEventHandler { [weak self] in
+        let onEvent: @Sendable () -> Void = { [weak self] in
             Task { @MainActor [weak self] in
                 self?.scheduleRoute()
             }
         }
-        src.setCancelHandler {
+        let onCancel: @Sendable () -> Void = {
             close(fd)
         }
+        src.setEventHandler(handler: onEvent)
+        src.setCancelHandler(handler: onCancel)
         src.resume()
         source = src
     }
@@ -152,7 +160,7 @@ final class DownloadsRouter: ObservableObject {
         }
     }
 
-    private func applyBrowserDownloadFolder(_ folderPath: String) {
+    nonisolated private static func applyBrowserDownloadFolder(_ folderPath: String) {
         // Safari preference
         SystemMonitor.runShell("/usr/bin/defaults write com.apple.Safari DownloadsPath -string \"\(folderPath)\"")
 
