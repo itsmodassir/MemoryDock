@@ -37,7 +37,7 @@ struct DashboardView: View {
                     }
                     Button {
                         vm.refresh()
-                        if selection == .disk {
+                        if selection == .disk || selection == .installedApps {
                             vm.refreshDisk()
                         } else if selection == .files {
                             vm.scanFiles()
@@ -90,6 +90,8 @@ struct DashboardView: View {
                         vm.refreshDisk()
                     }
                 }
+        case .installedApps:
+            ApplicationsView(vm: vm, searchText: searchText)
         case .files:
             fileOrganizerTab
                 .onAppear {
@@ -456,9 +458,6 @@ struct DashboardView: View {
 
     private var diskTab: some View {
         let writableExternalVolumes = vm.volumes.filter { $0.isExternal && $0.isWritable }
-        let filteredApps = vm.diskApps.filter {
-            searchText.isEmpty || $0.name.localizedCaseInsensitiveContains(searchText)
-        }
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -535,67 +534,6 @@ struct DashboardView: View {
                         smbUsername: $smbUsername,
                         smbPassword: $smbPassword
                     )
-                }
-
-                GroupBox("Applications Storage (/Applications)") {
-                    VStack(spacing: 8) {
-                        if vm.isDiskRefreshing && filteredApps.isEmpty {
-                            HStack {
-                                ProgressView().controlSize(.small)
-                                Text("Calculating app sizes...")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                            }
-                        } else {
-                            ForEach(filteredApps) { app in
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        HStack(spacing: 6) {
-                                            Text(app.name).fontWeight(.medium)
-                                            Text(app.isExternal && !app.isMounted ? "\(app.volumeLabel) (Disconnected)" : app.volumeLabel)
-                                                .font(.caption2)
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2)
-                                                .background(
-                                                    (app.isExternal ? (app.isMounted ? Color.green : Color.orange) : Color.secondary).opacity(0.18),
-                                                    in: Capsule()
-                                                )
-                                                .foregroundStyle(app.isExternal ? (app.isMounted ? .green : .orange) : .secondary)
-                                        }
-                                        if app.isExternal {
-                                            Text(app.resolvedPath)
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(1)
-                                        }
-                                    }
-                                    Spacer()
-                                    Text(formatBytes(app.sizeBytes))
-                                        .monospacedDigit()
-                                        .foregroundStyle(.secondary)
-
-                                    if app.isExternal && app.isMounted {
-                                        Button("Move to Internal") {
-                                            vm.moveAppBackToInternal(app)
-                                        }
-                                        .disabled(vm.isMovingApp)
-                                    } else if !app.isExternal && !writableExternalVolumes.isEmpty {
-                                        Menu("Move to External") {
-                                            ForEach(writableExternalVolumes) { vol in
-                                                Button("\(vol.name) (\(formatBytes(vol.availableBytes)) free)") {
-                                                    vm.moveAppToExternal(app, targetVolumePath: vol.mountPath)
-                                                }
-                                            }
-                                        }
-                                        .disabled(vm.isMovingApp)
-                                    }
-                                }
-                                Divider()
-                            }
-                        }
-                    }
-                    .padding(6)
                 }
 
                 GroupBox("Default Downloads Drive (Internet & Any App)") {
