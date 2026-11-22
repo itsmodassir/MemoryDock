@@ -41,6 +41,8 @@ struct DashboardView: View {
                             vm.refreshDisk()
                         } else if selection == .files {
                             vm.scanFiles()
+                        } else if selection == .cache {
+                            vm.scanCaches()
                         }
                     } label: {
                         Label("Refresh", systemImage: "arrow.clockwise")
@@ -105,6 +107,8 @@ struct DashboardView: View {
                         vm.scanFiles()
                     }
                 }
+        case .cache:
+            CacheCleanerView(vm: vm)
         case .cloud:
             CloudStorageView(vm: vm)
         case .remote:

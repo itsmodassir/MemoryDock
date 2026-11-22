@@ -18,6 +18,9 @@ final class AppViewModel: ObservableObject {
     @Published var externalPhysicalDisks: [ExternalDiskTarget] = []
     @Published var isDiskToolBusy = false
     @Published var diskToolMessage: String?
+    @Published var cacheItems: [CacheItem] = []
+    @Published var isScanningCaches = false
+    @Published var isClearingCache = false
     @Published var isRefreshing = false
     @Published var isDiskRefreshing = false
     @Published var isScanningFiles = false
@@ -456,6 +459,52 @@ final class AppViewModel: ObservableObject {
                 self.isDiskToolBusy = false
                 self.refreshDisk()
                 self.refreshExternalPhysicalDisks()
+            }
+        }
+    }
+
+    func scanCaches() {
+        guard !isScanningCaches else { return }
+        isScanningCaches = true
+        Task.detached(priority: .userInitiated) {
+            let items = CacheManager.scanCaches()
+            await MainActor.run {
+                self.cacheItems = items
+                self.isScanningCaches = false
+            }
+        }
+    }
+
+    func clearCache(_ item: CacheItem) {
+        guard !isClearingCache else { return }
+        isClearingCache = true
+        statusMessage = "Clearing \(item.name)..."
+        Task.detached(priority: .userInitiated) {
+            let msg = CacheManager.clearCache(item)
+            await MainActor.run {
+                self.statusMessage = msg
+                self.isClearingCache = false
+                self.scanCaches()
+                self.refreshVolumesOnly()
+            }
+        }
+    }
+
+    func clearAllSafeCaches() {
+        guard !isClearingCache else { return }
+        let safeItems = cacheItems.filter { $0.isSafe && $0.sizeBytes > 0 }
+        guard !safeItems.isEmpty else { return }
+        isClearingCache = true
+        statusMessage = "Cleaning safe caches..."
+        Task.detached(priority: .userInitiated) {
+            for item in safeItems {
+                _ = CacheManager.clearCache(item)
+            }
+            await MainActor.run {
+                self.statusMessage = "Cleaned all safe caches"
+                self.isClearingCache = false
+                self.scanCaches()
+                self.refreshVolumesOnly()
             }
         }
     }

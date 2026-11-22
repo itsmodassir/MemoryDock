@@ -66,6 +66,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     case disk = "Disk Management"
     case installedApps = "Applications"
     case files = "File Organizer"
+    case cache = "Cache Cleaner"
     case cloud = "Cloud Storage"
     case remote = "Remote Macs"
 
@@ -80,6 +81,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         case .disk: return "externaldrive.connected.to.line.below"
         case .installedApps: return "square.grid.2x2.fill"
         case .files: return "folder.badge.gearshape"
+        case .cache: return "sparkles"
         case .cloud: return "icloud.fill"
         case .remote: return "laptopcomputer.and.iphone"
         }
