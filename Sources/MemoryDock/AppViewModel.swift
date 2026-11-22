@@ -56,6 +56,7 @@ final class AppViewModel: ObservableObject {
         }
         remoteServer.attach(viewModel: self)
         refresh()
+        refreshCloudMounts()
         startAutoRefresh()
         observeVolumeChanges()
     }

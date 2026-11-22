@@ -108,10 +108,11 @@ struct DashboardView: View {
     private var overviewTab: some View {
         let internalVol = vm.volumes.first { !$0.isExternal }
         let extCount = vm.volumes.filter(\.isExternal).count
+        let cloudTotal = vm.cloudMounts.count + vm.s3Configs.count
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 185), spacing: 12)], spacing: 12) {
                     Button { selection = .apps } label: {
                         summaryCard(
                             title: "Running Apps",
@@ -144,10 +145,40 @@ struct DashboardView: View {
 
                     Button { selection = .disk } label: {
                         summaryCard(
-                            title: "Mac Storage",
+                            title: "Disk & Wi-Fi Drives",
                             value: internalVol.map { "\(formatBytes($0.availableBytes)) free" } ?? "--",
                             subtitle: "\(extCount) external / Wi-Fi disk\(extCount == 1 ? "" : "s")",
                             color: .teal
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { selection = .files } label: {
+                        summaryCard(
+                            title: "File Organizer",
+                            value: vm.organizedFiles.isEmpty ? "Scan Files" : "\(vm.organizedFiles.count) files",
+                            subtitle: vm.organizedFiles.isEmpty ? "Docs, Images, Video, Audio" : "Duplicates: \(vm.duplicateFileIDs.count)",
+                            color: .green
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { selection = .cloud } label: {
+                        summaryCard(
+                            title: "Cloud Storage",
+                            value: "\(cloudTotal) connected",
+                            subtitle: "\(vm.cloudMounts.count) Drive · \(vm.s3Configs.count) S3/R2",
+                            color: .indigo
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { selection = .remote } label: {
+                        summaryCard(
+                            title: "Remote Macs",
+                            value: vm.remoteClient.isConnected ? "Connected" : (vm.remoteServer.isSharing ? "Sharing" : "Ready"),
+                            subtitle: vm.remoteServer.isSharing ? "PIN: \(vm.remoteServer.pairingPIN)" : "Same Wi-Fi Control",
+                            color: .pink
                         )
                     }
                     .buttonStyle(.plain)
@@ -180,7 +211,7 @@ struct DashboardView: View {
                     }
 
                     GroupBox("Quick Actions") {
-                        VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 8) {
                             Button {
                                 selection = .disk
                             } label: {
@@ -191,6 +222,18 @@ struct DashboardView: View {
                                 selection = .files
                             } label: {
                                 Label("Organize Files, Preview Images & Find Duplicates", systemImage: "folder.badge.gearshape")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            Button {
+                                selection = .cloud
+                            } label: {
+                                Label("Connect S3, Cloudflare R2, iCloud, Google Drive & OneDrive", systemImage: "icloud.fill")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            Button {
+                                selection = .remote
+                            } label: {
+                                Label("Control Another Mac on Same Wi-Fi", systemImage: "laptopcomputer.and.iphone")
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             Button {
