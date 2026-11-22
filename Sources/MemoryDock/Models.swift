@@ -10,6 +10,8 @@ struct MemorySnapshot: Sendable {
     let swapUsedBytes: UInt64
     let swapTotalBytes: UInt64
     let pressureLevel: Int // 1 = Normal, 2 = Warning, 4 = Critical
+    let pageins: UInt64
+    let pageouts: UInt64
 
     var usedBytes: UInt64 {
         activeBytes + wiredBytes + compressedBytes
@@ -37,8 +39,24 @@ struct MemorySnapshot: Sendable {
         freeBytes: 0,
         swapUsedBytes: 0,
         swapTotalBytes: 0,
-        pressureLevel: 1
+        pressureLevel: 1,
+        pageins: 0,
+        pageouts: 0
     )
+}
+
+struct AppMemoryPoint: Identifiable, Sendable {
+    let id = UUID()
+    let timestamp: Date
+    let rssMB: Double
+}
+
+struct SubProcessItem: Identifiable, Sendable {
+    let id: pid_t
+    let pid: pid_t
+    let name: String
+    let command: String
+    let rssBytes: UInt64
 }
 
 struct MemoryHistoryPoint: Identifiable, Sendable {
@@ -57,6 +75,7 @@ struct AppItem: Identifiable, Sendable {
     let memoryDeltaBytes: Int64
     let isProtected: Bool
     let isFrozen: Bool
+    let isAutoFreeze: Bool
 }
 
 struct BackgroundProcessItem: Identifiable, Sendable {

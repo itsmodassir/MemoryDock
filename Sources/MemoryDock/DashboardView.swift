@@ -15,6 +15,7 @@ struct DashboardView: View {
     @State private var showDuplicatesOnly = false
     @State private var showLargeFilesOnly = false
     @State private var showBackgroundProcesses = false
+    @State private var inspectedApp: AppItem? = nil
 
     var body: some View {
         NavigationSplitView {
@@ -69,6 +70,12 @@ struct DashboardView: View {
                             .foregroundStyle(.secondary)
                     }
                     Button {
+                        vm.exportMemoryReport()
+                    } label: {
+                        Label("Copy Report", systemImage: "doc.on.clipboard")
+                    }
+                    .help("Copy Memory Diagnostic Report to clipboard")
+                    Button {
                         vm.refresh(includeBrowserTabs: selection == .tabs)
                         if selection == .disk || selection == .installedApps {
                             vm.refreshDisk()
@@ -101,7 +108,7 @@ struct DashboardView: View {
                     .background(pressureColor.opacity(0.18), in: Capsule())
                     .foregroundStyle(pressureColor)
                 Spacer()
-                Text("Active \(formatBytes(vm.snapshot.activeBytes)) · Wired \(formatBytes(vm.snapshot.wiredBytes)) · Compressed \(formatBytes(vm.snapshot.compressedBytes)) · Swap \(formatBytes(vm.snapshot.swapUsedBytes)) · Free \(formatBytes(vm.snapshot.freeBytes + vm.snapshot.inactiveBytes))")
+                Text("Active \(formatBytes(vm.snapshot.activeBytes)) · Wired \(formatBytes(vm.snapshot.wiredBytes)) · Compressed \(formatBytes(vm.snapshot.compressedBytes)) · Swap \(formatBytes(vm.snapshot.swapUsedBytes)) (\(String(format: "%.1f", vm.pageoutsPerSec))/s) · Free \(formatBytes(vm.snapshot.freeBytes + vm.snapshot.inactiveBytes))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -547,6 +554,20 @@ struct DashboardView: View {
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
 
+                        Button {
+                            vm.toggleAutoFreeze(for: app)
+                        } label: {
+                            Image(systemName: app.isAutoFreeze ? "moon.zzz.fill" : "moon.zzz")
+                                .foregroundStyle(app.isAutoFreeze ? .purple : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(app.isProtected)
+                        .help(app.isAutoFreeze ? "Auto-Freeze in background enabled (resumes on click)" : "Enable Auto-Freeze when hidden for 45s")
+
+                        Button("Inspect") {
+                            inspectedApp = app
+                        }
+
                         Button(app.isFrozen ? "Resume" : "Freeze") {
                             vm.toggleFreezeApp(app)
                         }
@@ -563,6 +584,9 @@ struct DashboardView: View {
                     .padding(.vertical, 2)
                 }
             }
+        }
+        .sheet(item: $inspectedApp) { app in
+            AppInspectorSheet(vm: vm, app: app)
         }
     }
 

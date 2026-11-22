@@ -46,7 +46,9 @@ enum SystemMonitor {
                 freeBytes: 0,
                 swapUsedBytes: swap.xsu_used,
                 swapTotalBytes: swap.xsu_total,
-                pressureLevel: Int(pressure)
+                pressureLevel: Int(pressure),
+                pageins: UInt64(stats.pageins),
+                pageouts: UInt64(stats.pageouts)
             )
         }
 
@@ -59,7 +61,9 @@ enum SystemMonitor {
             freeBytes: UInt64(stats.free_count) * pageBytes,
             swapUsedBytes: swap.xsu_used,
             swapTotalBytes: swap.xsu_total,
-            pressureLevel: Int(pressure)
+            pressureLevel: Int(pressure),
+            pageins: UInt64(stats.pageins),
+            pageouts: UInt64(stats.pageouts)
         )
     }
 
@@ -91,6 +95,7 @@ enum SystemMonitor {
         processes: [ProcessInfoRow],
         protectedBundleIDs: Set<String>,
         frozenPIDs: Set<pid_t>,
+        autoFreezeBundleIDs: Set<String>,
         previousRSS: [String: UInt64]
     ) -> [AppItem] {
         let runningApps = NSWorkspace.shared.runningApplications
@@ -127,6 +132,7 @@ enum SystemMonitor {
             let prev = previousRSS[key] ?? rss
             let delta = Int64(rss) - Int64(prev)
             let isProtected = bundleID.map { protectedBundleIDs.contains($0) } ?? false
+            let isAuto = bundleID.map { autoFreezeBundleIDs.contains($0) } ?? false
             items.append(
                 AppItem(
                     id: key,
@@ -136,12 +142,47 @@ enum SystemMonitor {
                     rssBytes: rss,
                     memoryDeltaBytes: delta,
                     isProtected: isProtected,
-                    isFrozen: frozenPIDs.contains(pid)
+                    isFrozen: frozenPIDs.contains(pid),
+                    isAutoFreeze: isAuto
                 )
             )
         }
 
         return items.sorted { $0.rssBytes > $1.rssBytes }
+    }
+
+    static func fetchSubProcesses(rootPID: pid_t) -> [SubProcessItem] {
+        let processes = listProcesses()
+        var childrenByParent: [pid_t: [ProcessInfoRow]] = [:]
+        for p in processes {
+            childrenByParent[p.ppid, default: []].append(p)
+        }
+        let processByPID = Dictionary(uniqueKeysWithValues: processes.map { ($0.pid, $0) })
+
+        var result: [SubProcessItem] = []
+        var queue: [pid_t] = [rootPID]
+        var visited: Set<pid_t> = [rootPID]
+
+        while let current = queue.popLast() {
+            if let row = processByPID[current] {
+                let exe = row.command.split(separator: " ").first.map(String.init) ?? row.command
+                let name = URL(fileURLWithPath: exe).lastPathComponent
+                result.append(
+                    SubProcessItem(
+                        id: row.pid,
+                        pid: row.pid,
+                        name: name,
+                        command: row.command,
+                        rssBytes: row.rssBytes
+                    )
+                )
+            }
+            for child in childrenByParent[current] ?? [] where !visited.contains(child.pid) {
+                visited.insert(child.pid)
+                queue.append(child.pid)
+            }
+        }
+        return result.sorted { $0.rssBytes > $1.rssBytes }
     }
 
     static func buildBackgroundProcesses(processes: [ProcessInfoRow]) -> [BackgroundProcessItem] {

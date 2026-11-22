@@ -5,6 +5,8 @@ import Foundation
 final class AppViewModel: ObservableObject {
     @Published var snapshot: MemorySnapshot = .empty
     @Published var memoryHistory: [MemoryHistoryPoint] = []
+    @Published var appMemoryHistory: [String: [AppMemoryPoint]] = [:]
+    @Published var pageoutsPerSec: Double = 0
     @Published var apps: [AppItem] = []
     @Published var backgroundProcesses: [BackgroundProcessItem] = []
     @Published var tabs: [BrowserTabItem] = []
@@ -46,10 +48,15 @@ final class AppViewModel: ObservableObject {
     @Published var autoFreeThreshold: Double = 0.88
 
     private let protectedKey = "MemoryDock.protectedBundleIDs"
+    private let autoFreezeKey = "MemoryDock.autoFreezeBundleIDs"
     private let s3ConfigsKey = "MemoryDock.s3Configs"
     private var protectedBundleIDs: Set<String>
+    private var autoFreezeBundleIDs: Set<String>
     private var frozenPIDs: Set<pid_t> = []
+    private var autoFreezeTasks: [pid_t: Task<Void, Never>] = [:]
     private var previousRSSByApp: [String: UInt64] = [:]
+    private var lastPageouts: UInt64?
+    private var lastPageoutTime: Date?
     private var lastAutoFreeAt: Date = .distantPast
     private var refreshTimer: Timer?
 
@@ -71,11 +78,13 @@ final class AppViewModel: ObservableObject {
            let decoded = try? JSONDecoder().decode([S3ConnectionConfig].self, from: raw) {
             self.s3Configs = decoded
         }
+        self.autoFreezeBundleIDs = Set(UserDefaults.standard.stringArray(forKey: autoFreezeKey) ?? [])
         remoteServer.attach(viewModel: self)
         refresh()
         refreshCloudMounts()
         startAutoRefresh()
         observeVolumeChanges()
+        observeAppActivation()
     }
 
     private func observeVolumeChanges() {
@@ -102,6 +111,55 @@ final class AppViewModel: ObservableObject {
         memoryHistory.append(pt)
         if memoryHistory.count > 30 {
             memoryHistory.removeFirst(memoryHistory.count - 30)
+        }
+
+        let now = Date()
+        if let prevPO = lastPageouts, let prevT = lastPageoutTime {
+            let dt = max(now.timeIntervalSince(prevT), 0.5)
+            let diff = snap.pageouts >= prevPO ? snap.pageouts - prevPO : 0
+            pageoutsPerSec = Double(diff) / dt
+        }
+        lastPageouts = snap.pageouts
+        lastPageoutTime = now
+    }
+
+    private func observeAppActivation() {
+        let nc = NSWorkspace.shared.notificationCenter
+        nc.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            let pid = app.processIdentifier
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.autoFreezeTasks[pid]?.cancel()
+                self.autoFreezeTasks[pid] = nil
+                if self.frozenPIDs.contains(pid) {
+                    kill(pid, SIGCONT)
+                    self.frozenPIDs.remove(pid)
+                    self.statusMessage = "Auto-resumed \(app.localizedName ?? "App")"
+                    self.refresh()
+                }
+            }
+        }
+
+        nc.addObserver(forName: NSWorkspace.didDeactivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  let bundleID = app.bundleIdentifier else { return }
+            let pid = app.processIdentifier
+            let appName = app.localizedName ?? bundleID
+            Task { @MainActor [weak self] in
+                guard let self, self.autoFreezeBundleIDs.contains(bundleID) else { return }
+                self.autoFreezeTasks[pid]?.cancel()
+                self.autoFreezeTasks[pid] = Task {
+                    try? await Task.sleep(for: .seconds(45))
+                    guard !Task.isCancelled else { return }
+                    let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+                    guard frontPID != pid, !self.frozenPIDs.contains(pid) else { return }
+                    kill(pid, SIGSTOP)
+                    self.frozenPIDs.insert(pid)
+                    self.statusMessage = "Auto-froze idle \(appName)"
+                    self.refresh()
+                }
+            }
         }
     }
 
@@ -142,6 +200,7 @@ final class AppViewModel: ObservableObject {
         isRefreshing = true
         let protected = protectedBundleIDs
         let frozen = frozenPIDs
+        let autoFreeze = autoFreezeBundleIDs
         let prevRSS = previousRSSByApp
 
         Task.detached(priority: .userInitiated) {
@@ -151,6 +210,7 @@ final class AppViewModel: ObservableObject {
                 processes: procs,
                 protectedBundleIDs: protected,
                 frozenPIDs: frozen,
+                autoFreezeBundleIDs: autoFreeze,
                 previousRSS: prevRSS
             )
             let bgList = SystemMonitor.buildBackgroundProcesses(processes: procs)
@@ -162,8 +222,13 @@ final class AppViewModel: ObservableObject {
                 self.snapshot = snap
                 self.recordMemoryPoint(snap)
                 self.apps = appList
+                let now = Date()
                 for app in appList {
                     self.previousRSSByApp[app.id] = app.rssBytes
+                    var pts = self.appMemoryHistory[app.id] ?? []
+                    pts.append(AppMemoryPoint(timestamp: now, rssMB: Double(app.rssBytes) / 1_048_576.0))
+                    if pts.count > 60 { pts.removeFirst(pts.count - 60) }
+                    self.appMemoryHistory[app.id] = pts
                 }
                 self.backgroundProcesses = bgList
                 if includeBrowserTabs {
@@ -226,6 +291,43 @@ final class AppViewModel: ObservableObject {
         kill(proc.pid, SIGTERM)
         statusMessage = "Stopped \(proc.name) (PID \(proc.pid))"
         scheduleQuickRefresh()
+    }
+
+    func toggleAutoFreeze(for app: AppItem) {
+        guard let bundleID = app.bundleIdentifier else { return }
+        if autoFreezeBundleIDs.contains(bundleID) {
+            autoFreezeBundleIDs.remove(bundleID)
+        } else {
+            autoFreezeBundleIDs.insert(bundleID)
+        }
+        UserDefaults.standard.set(Array(autoFreezeBundleIDs), forKey: autoFreezeKey)
+        refresh()
+    }
+
+    func exportMemoryReport() {
+        var lines: [String] = [
+            "=== MemoryDock Diagnostic Report ===",
+            "Timestamp: \(ISO8601DateFormatter().string(from: Date()))",
+            "RAM: \(formatBytes(snapshot.usedBytes)) / \(formatBytes(snapshot.totalBytes)) (Pressure: \(snapshot.pressureLabel))",
+            "Active: \(formatBytes(snapshot.activeBytes)) | Wired: \(formatBytes(snapshot.wiredBytes)) | Compressed: \(formatBytes(snapshot.compressedBytes))",
+            "Swap Used: \(formatBytes(snapshot.swapUsedBytes)) | Pageouts/sec: \(String(format: "%.1f", pageoutsPerSec))",
+            "",
+            "Top Desktop Apps:"
+        ]
+        for app in apps.prefix(10) {
+            lines.append("  - \(app.name) (PID \(app.pid)): \(formatBytes(app.rssBytes))\(app.isFrozen ? " [FROZEN]" : "")")
+        }
+        if !backgroundProcesses.isEmpty {
+            lines.append("")
+            lines.append("Top Background Processes:")
+            for proc in backgroundProcesses.prefix(8) {
+                lines.append("  - \(proc.name) (PID \(proc.pid)): \(formatBytes(proc.rssBytes))")
+            }
+        }
+        let report = lines.joined(separator: "\n")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(report, forType: .string)
+        statusMessage = "Copied Memory Diagnostic Report to clipboard"
     }
 
     private func checkAutoFreeGuard(_ snap: MemorySnapshot) {
